@@ -14,7 +14,7 @@ For ISS history, set the UTC clock to the beginning of the interval, open **Orbi
 
 Historical downloads query the IAU CPS SatChecker archive. Availability depends on the date and source. The built-in replay uses the April 25, 2024 element set published in the SatChecker data-access example. By default, Meridian keeps downloaded elements in `~/.iss-transit-tracker/orbits.sqlite3`. Set `ISS_CACHE_DIR` before startup to use a different directory. [SatChecker orbital data access](https://satchecker.readthedocs.io/en/latest/tools_data_access.html)
 
-On the GitHub Pages build, the browser stores imported TLEs locally. The hosted site includes two historical examples and refreshes the current TLE during its daily build. Historical archive downloads remain available through the local Python app because SatChecker does not permit cross-origin browser requests.
+On the GitHub Pages build, the browser stores imported TLEs locally. The hosted site includes two historical examples and requests the current TLE directly from Where the ISS at?, with a published fallback. Historical archive downloads remain available through the local Python app because SatChecker does not permit cross-origin browser requests. [Where the ISS at? API](https://docs.wheretheiss.at/w/developer)
 
 The epoch is the time the orbit elements describe. Meridian chooses the closest available epoch within three days of the requested instant and splits longer searches when the best orbit changes. The archive can be discontinuous. The events view lists uncovered intervals. **Fetch latest** requests a current element set to extend recent coverage. [CelesTrak GP data](https://celestrak.org/NORAD/documentation/gp-data-formats.php)
 
