@@ -32,6 +32,7 @@ function svg(parent, tag, attrs, value) {
   return node;
 }
 async function api(path, params, payload) {
+  if (window.browserApi) return window.browserApi(path, params, payload);
   const url = new URL("/api/" + path, location.origin);
   if (params) url.search = new URLSearchParams(params);
   const response = await fetch(url, payload ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {});
@@ -342,6 +343,12 @@ window.addEventListener("hashchange", () => {
   loadView();
 });
 syncSite();syncClock();loadView();
+if (window.browserApi) {
+  $("refresh").hidden = true;
+  $("history").hidden = true;
+  $("history").parentElement.querySelector("p").textContent =
+    "This hosted version refreshes the current ISS orbit during its daily build. For other dates, paste an ISS TLE below. Saved elements stay in this browser.";
+}
 setInterval(()=>{
   if(live && !pendingSky && activeView()==="sky" && !document.hidden && document.activeElement!==$("when") && document.activeElement!==$("scrub")) {
     instant=new Date();syncClock();loadView();
