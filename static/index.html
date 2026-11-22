@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c171c">
+  <title>Meridian · ISS Transit Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="mast"><div class="wrap mast-inner">
+    <a class="brand" href="#sky"><span class="mark" aria-hidden="true"></span>Meridian</a>
+    <nav aria-label="Workspace"><a href="#sky">Sky chart</a><a href="#events">Passes &amp; transits</a><a href="#archive">Orbit archive</a></nav>
+  </div></header>
+  <main class="wrap">
+    <header class="page-title"><div><p class="eyebrow">ISS Transit Tracker</p><h1 id="view-title">Observer’s sky</h1></div><button id="site-toggle" aria-expanded="false" aria-controls="site-form"><span aria-hidden="true">⌖</span> <span id="site-name">Greenwich Observatory</span></button></header>
+    <form id="site-form" hidden class="panel site-settings">
+      <label>Latitude (° N)<input id="site-lat" type="number" min="-90" max="90" step="any" required></label>
+      <label>Longitude (° E)<input id="site-lon" type="number" min="-180" max="180" step="any" required></label>
+      <label>Elevation (m)<input id="site-elev" type="number" min="-500" max="9000" step="any" required></label>
+      <button type="submit" class="primary">Set location</button><button type="button" id="geolocate">Use device location</button>
+      <p id="site-message" role="status"></p>
+    </form>
+    <section class="time-bar" id="time-bar" aria-label="Observation time">
+      <label>Observation time <span class="muted">(UTC)</span><input type="datetime-local" id="when" step="1" required></label>
+      <div class="time-actions"><button id="back-day" title="Previous day" aria-label="Previous day">−1 day</button><button id="forward-day" title="Next day" aria-label="Next day">+1 day</button><button id="now" class="primary">Now</button></div>
+      <label class="slider-label">Explore the day <span id="scrub-value"></span><input id="scrub" type="range" min="0" max="1439" value="0" aria-label="UTC minute of day"></label>
+    </section>
+    <p id="notice" class="notice" role="status"></p>
+    <section id="sky" class="view">
+      <div class="sky-layout">
+        <article class="panel chart-card">
+          <div class="card-head"><div><p class="eyebrow">Horizon view</p><h2>All-sky chart</h2></div><span id="chart-date" class="mono"></span></div>
+          <svg id="sky-map" class="sky-map" viewBox="0 0 520 460" role="img" aria-label="Observer’s sky chart with north up and east left"></svg>
+          <div class="chart-foot"><span><i class="key iss"></i> ISS</span><span><i class="key body"></i> Solar system</span><span>Looking up · east on left</span></div>
+        </article>
+        <aside class="panel object-card"><div class="card-head"><div><p class="eyebrow">Object index</p><h2>Sky positions</h2></div></div>
+          <div class="object-labels"><span>Object</span><span>Altitude</span><span>Azimuth</span></div><div id="object-list"></div>
+          <div id="focus" class="focus"></div>
+        </aside>
+      </div>
+      <div class="source-note"><span id="sky-orbit"></span><a href="#archive">View orbit archive</a></div>
+    </section>
+    <section id="events" class="view" hidden>
+      <div class="panel"><div class="card-head"><div><p class="eyebrow">Observer forecast &amp; history</p><h2>Passes &amp; transits</h2></div><label>Search forward<select id="hours"><option value="6">6 hours</option><option value="24" selected>24 hours</option><option value="72">72 hours</option></select></label></div>
+        <div class="event-body"><p id="event-summary" role="status"></p><div id="sample-actions" hidden></div><h3>Disk crossings</h3><div id="transits"></div><h3>Near misses</h3><div id="near-misses"></div><h3>ISS passes</h3><div id="passes"></div></div>
+      </div>
+      <article id="corridor-panel" class="panel" hidden><div class="card-head"><div><p class="eyebrow">Earth view</p><h2>Transit corridor</h2></div><span class="mono">North up</span></div><div id="corridor" class="event-body"></div></article>
+    </section>
+    <section id="archive" class="view" hidden>
+      <div class="archive-layout"><article class="panel"><div class="card-head"><div><p class="eyebrow">Historical coverage</p><h2>Saved ISS orbits</h2></div><button id="refresh">Fetch latest</button></div><div class="event-body"><p>Choose a past observation time above to retrieve ISS orbits for that interval.</p><button id="history" type="button">Get historical orbits</button></div><div id="orbits" class="event-body"></div></article>
+        <article class="panel"><div class="card-head"><div><p class="eyebrow">Orbit data</p><h2>Import a TLE</h2></div></div><form id="import-form" class="event-body"><label for="tle">ISS two-line element set</label><textarea id="tle" required rows="7" spellcheck="false" placeholder="1 25544U …&#10;2 25544 …"></textarea><p class="muted">Choose an orbit dated close to the observation you want to reconstruct.</p><button class="primary">Import orbit</button></form></article></div>
+    </section>
+  </main>
+  <footer class="wrap">Meridian <span>Celestial positions &amp; ISS transits</span></footer>
+</body>
+</html>
