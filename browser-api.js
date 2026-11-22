@@ -33,9 +33,24 @@ const saved = records;
 records = [];
 for (const [name, text] of builtIn) ingest(text, "Archived ISS orbit · " + name);
 for (const r of saved) ingest(r.first + "\n" + r.second, r.source);
-const currentReady=fetch("./current.tle").then(async r => {
-  if(r.ok) ingest(await r.text(),"CelesTrak GP · build");
-}).catch(()=>{});
+async function refreshCurrent() {
+  const response=await fetch("https://api.wheretheiss.at/v1/satellites/25544/tles");
+  if(!response.ok) throw Error("Current orbit download failed. Try again later.");
+  const data=await response.json();
+  if(data.id!=="25544" || !data.line1 || !data.line2) throw Error("Current orbit response was incomplete.");
+  const count=ingest(data.line1+"\n"+data.line2,"Where the ISS at?");
+  localStorage.setItem("meridian-last-refresh",String(Date.now()));
+  return count;
+}
+const currentReady=(async()=>{
+  if(Date.now()-Number(localStorage.getItem("meridian-last-refresh"))>3*3600000) {
+    try {await refreshCurrent(); return;} catch {}
+  }
+  try {
+    const response=await fetch("./current.tle");
+    if(response.ok) ingest(await response.text(),"CelesTrak GP · published fallback");
+  } catch {}
+})();
 
 function orbitAt(date) {
   const time = +date;
@@ -168,9 +183,7 @@ export async function browserApi(path,p={},payload={}) {
   if(path==="archive") return {orbits:records.map(metadata),count:records.length};
   if(path==="import") return {count:ingest(payload.tle,"Imported TLE")};
   if(path==="refresh") {
-    const response=await fetch("https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE");
-    if(!response.ok) throw Error("Current orbit download failed. Try again later.");
-    return {count:ingest(await response.text(),"CelesTrak GP")};
+    return {count:await refreshCurrent()};
   }
   if(path==="history") throw Error("Historical downloads require the local app. Paste a dated ISS TLE into the archive.");
   throw Error("Unknown request.");

@@ -344,10 +344,9 @@ window.addEventListener("hashchange", () => {
 });
 syncSite();syncClock();loadView();
 if (window.browserApi) {
-  $("refresh").hidden = true;
   $("history").hidden = true;
   $("history").parentElement.querySelector("p").textContent =
-    "This hosted version refreshes the current ISS orbit during its daily build. For other dates, paste an ISS TLE below. Saved elements stay in this browser.";
+    "Use Fetch latest for the current ISS orbit. For other dates, paste an ISS TLE below. Saved elements stay in this browser.";
 }
 setInterval(()=>{
   if(live && !pendingSky && activeView()==="sky" && !document.hidden && document.activeElement!==$("when") && document.activeElement!==$("scrub")) {
