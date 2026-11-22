@@ -1,5 +1,7 @@
 # Meridian · ISS Transit Tracker
 
+The GitHub Pages build runs the sky chart and transit calculations in your browser. It builds and refreshes the current ISS orbit daily. Dated ISS elements can be pasted into the site's orbit archive and are saved in that browser. The repository's Pages settings must be enabled before the site gets a public URL.
+
 Find the ISS, Sun, Moon, and planets in the sky above an observing site. Move the clock to watch the sky change, follow the ISS across a pass, or search for the moments it crosses the face of the Sun or Moon. The browser interface runs on your own computer.
 
 ## Run it

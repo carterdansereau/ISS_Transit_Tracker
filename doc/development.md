@@ -2,6 +2,8 @@
 
 `app.py` serves the static browser client and exposes the same calculations through the CLI. `engine.py` computes observer-relative positions, pass tracks, transit contacts, and ground corridors. `data_store.py` manages orbital elements and the packaged planetary kernel. The UI in `static/` uses native browser APIs and requires no JavaScript build step.
 
+The GitHub Pages build uses `npm run build` to bundle `static/browser-api.js` and copy the UI into `dist/`. The workflow in `.github/workflows/pages.yml` deploys this output. The hosted calculator uses Astronomy Engine for solar-system positions and satellite.js for ISS propagation. The local Python calculator uses Skyfield and JPL DE421. They can give slightly different numerical results.
+
 ## HTTP interface
 
 Run the service on loopback. Dates use ISO 8601 with an explicit UTC offset. GET site queries accept `lat`, `lon`, `elevation` in metres, and `at`. All POST requests take JSON.
