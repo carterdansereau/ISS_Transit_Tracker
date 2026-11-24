@@ -11,7 +11,8 @@ BODIES = {"Sun": "sun", "Moon": "moon", **{
     name: name.lower() + " barycenter"
     for name in ("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune")
 }}
-RADII_KM = {"Sun": 695700., "Moon": 1737.4}
+RADII_KM = {"Sun": 695700., "Moon": 1737.4, "Mercury": 2439.4, "Venus": 6051.8,
+            "Mars": 3389.5, "Jupiter": 69911., "Saturn": 58232., "Uranus": 25362., "Neptune": 24622.}
 ISS_RADIUS_KM = .055  # Approximate outer silhouette, attitude independent.
 
 
@@ -87,7 +88,7 @@ class Engine:
         alt, az, _ = vector.altaz()
         return [dict(alt=a, az=z) for a, z in zip(alt.degrees.tolist(), az.degrees.tolist())]
 
-    def events(self, lat, lon, elevation_m, start, end, orbit):
+    def events(self, lat, lon, elevation_m, start, end, orbit, targets=("Sun", "Moon")):
         result = dict(passes=[], transits=[], near_misses=[])
         site = wgs84.latlon(lat, lon, elevation_m)
         sat = self.satellite(orbit)
@@ -102,11 +103,11 @@ class Engine:
             elif code == 1:
                 peak = dt
             elif rise is not None and dt > rise:
-                self._pass(result, site, relative, rise, peak, dt)
+                self._pass(result, site, relative, rise, peak, dt, targets)
                 rise, peak = None, None
         return result
 
-    def _pass(self, result, site, relative, rise, peak, setting):
+    def _pass(self, result, site, relative, rise, peak, setting, targets):
         span = (setting-rise).total_seconds()
         seconds = np.linspace(0, span, max(3, int(np.ceil(span/4))+1))
         base = self.ts.from_datetime(rise)
@@ -122,7 +123,7 @@ class Engine:
                                      peak_alt=float(palt.degrees), peak_az=float(paz.degrees), track=track))
         observer = self.earth + site
         observer_samples = observer.at(times)
-        for name in RADII_KM:
+        for name in targets:
             body = self.eph[BODIES[name]]
             objects = observer_samples.observe(body).apparent()
             sep = sat.separation_from(objects).degrees
@@ -146,7 +147,7 @@ class Engine:
                 if separation > 3:
                     continue
                 t = base + m/86400
-                h, z, _ = observer.at(t).observe(body).apparent().altaz()
+                h, z, distance = observer.at(t).observe(body).apparent().altaz()
                 if h.degrees < 0:
                     continue
                 def when(s):
@@ -154,6 +155,10 @@ class Engine:
                 row = dict(target=name, peak=when(m), alt=float(h.degrees), az=float(z.degrees),
                            separation_deg=separation)
                 if gap <= 0:
+                    sh, sz, sd = relative.at(t).altaz()
+                    row["detail"] = dict(iss_alt=float(sh.degrees), iss_az=float(sz.degrees),
+                                         iss_radius=float(np.degrees(np.arcsin(ISS_RADIUS_KM/sd.km))),
+                                         body_radius=float(np.degrees(np.arcsin(RADII_KM[name]/distance.km))))
                     entry = contact(margin, 0., m) if margin(0.) > 0 else 0.
                     exit_time = contact(margin, span, m) if margin(span) > 0 else span
                     row.update(entry=when(entry), exit=when(exit_time), duration_s=exit_time-entry)
