@@ -1,6 +1,6 @@
 # Meridian · ISS Transit Tracker
 
-Open the [hosted tracker](https://carterdansereau.github.io/ISS_Transit_Tracker/) in any browser. The sky chart and transit calculations run in the browser. The site fetches the latest ISS orbit when you visit and keeps saved elements in that browser. Dated ISS elements can be pasted into the orbit archive.
+Open the [hosted tracker](https://carterdansereau.github.io/ISS_Transit_Tracker/) in any browser. The sky chart and transit calculations run in the browser. The daily Pages build downloads NASA Johnson Space Center’s 15-day ISS trajectory. Forecasts use its published coverage dates. Archived TLEs support historical observations. Dated ISS elements can be pasted into the orbit archive.
 
 Find the ISS, Sun, Moon, and planets in the sky above an observing site. Move the clock to watch the sky change, follow the ISS across a pass, or search for the moments it crosses the face of the Sun or Moon. The browser interface runs on your own computer.
 

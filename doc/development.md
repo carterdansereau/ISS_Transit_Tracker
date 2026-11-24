@@ -2,7 +2,7 @@
 
 `app.py` serves the static browser client and exposes the same calculations through the CLI. `engine.py` computes observer-relative positions, pass tracks, transit contacts, and ground corridors. `data_store.py` manages orbital elements and the packaged planetary kernel. The UI in `static/` uses native browser APIs and requires no JavaScript build step.
 
-The GitHub Pages build uses `npm run build` to bundle `static/browser-api.js` and copy the UI into `dist/`. The built files are published at the root of the `gh-pages` branch. The hosted calculator uses Astronomy Engine for solar-system positions and satellite.js for ISS propagation. The local Python calculator uses Skyfield and JPL DE421. They can give slightly different numerical results.
+The GitHub Pages build uses `npm run build` to bundle `static/browser-api.js` and copy the UI into `dist/`. The build uses Python 3.11+ to validate NASA’s EME2000/UTC OEM and publish its state vectors alongside the app. Pages deploys the dist artifact. Both engines interpolate between adjacent vectors using their actual time spacing. Astronomy Engine and Skyfield transform J2000 positions to local observer coordinates. Historical TLEs use SGP4.
 
 ## HTTP interface
 
@@ -11,7 +11,7 @@ Run the service on loopback. Dates use ISO 8601 with an explicit UTC offset. GET
 | Method and path | Inputs | Result |
 | --- | --- | --- |
 | GET /api/sky | Site and time | Object positions and selected orbit metadata |
-| GET /api/events | Site, time, hours (1–72) | Passes, transit contacts, near misses, coverage gaps |
+| GET /api/events | Site, time, hours (1–360), target | Passes, transit contacts, near misses, coverage gaps |
 | GET /api/corridor | Site, closest-approach time, target (Sun or Moon) | Sampled centerline and edges |
 | GET /api/archive | None | Stored epochs, provenance, and coverage |
 | POST /api/refresh | Empty object | Current orbit metadata |

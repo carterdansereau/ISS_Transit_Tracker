@@ -47,20 +47,29 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.orbit_at(self.when + timedelta(days=2))[1]['source'], 'IAU CPS SatChecker')
         self.assertEqual(len(self.store.coverage()['intervals']), 2)
 
-    def test_live_fallback_is_cached(self):
-        _, first, second = self.text.splitlines()
-        now = datetime.now(UTC)
-        first = fix_checksum(first[:18] + now.strftime('%y%j') + first[23:])
-        payload = {'data': [{'tle_line1': first, 'tle_line2': second}]}
-        with patch('data_store.download', side_effect=[OSError('offline'), json.dumps(payload)]) as request:
+    def test_nasa_forecast_is_cached_and_bounded(self):
+        text = """OBJECT_ID = 1998-067-A
+REF_FRAME = EME2000
+CENTER_NAME = Earth
+TIME_SYSTEM = UTC
+CREATION_DATE = 2030-01-01T00:00:00
+START_TIME = 2030-01-01T00:00:00
+STOP_TIME = 2030-01-01T00:04:00
+2030-01-01T00:00:00 6700 0 0 0 7.7 0
+2030-01-01T00:04:00 6450 1800 0 -2 7.3 0"""
+        with patch('data_store.download', return_value=text) as request:
             meta = self.store.refresh()
-            self.assertEqual(meta['source'], 'IAU CPS SatChecker')
-            self.assertEqual(self.store.refresh()['epoch'], meta['epoch'])
-            self.assertEqual(request.call_count, 2)
+            self.assertEqual(self.store.refresh(), meta)
+            request.assert_called_once()
+        reopened = Store(self.store.directory)
+        end = datetime.fromisoformat(meta['end'])
+        self.assertEqual(reopened.orbit_at(end)[1], meta)
+        with self.assertRaises(OrbitUnavailable):
+            reopened.orbit_at(end + timedelta(seconds=1))
 
     def test_failures_are_throttled(self):
         with patch('data_store.download', side_effect=OSError('offline')) as request:
             for _ in range(2):
                 with self.assertRaises(RuntimeError):
                     self.store.refresh()
-            self.assertEqual(request.call_count, 2)
+            self.assertEqual(request.call_count, 1)
