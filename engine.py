@@ -72,6 +72,21 @@ class Engine:
                              distance_km=float(distance.km)))
         return rows
 
+    def sky_path(self, lat, lon, elevation_m, at, target, orbit):
+        site = wgs84.latlon(lat, lon, elevation_m)
+        if target == "ISS" and orbit is None:
+            return []
+        step = 10 if target == "ISS" else 300
+        times = self.ts.from_datetimes([at + timedelta(seconds=i * step) for i in range(73)])
+        if target == "ISS":
+            vector = (self.satellite(orbit) - site).at(times)
+        elif target in BODIES:
+            vector = (self.earth + site).at(times).observe(self.eph[BODIES[target]]).apparent()
+        else:
+            raise ValueError("Unknown sky object.")
+        alt, az, _ = vector.altaz()
+        return [dict(alt=a, az=z) for a, z in zip(alt.degrees.tolist(), az.degrees.tolist())]
+
     def events(self, lat, lon, elevation_m, start, end, orbit):
         result = dict(passes=[], transits=[], near_misses=[])
         site = wgs84.latlon(lat, lon, elevation_m)

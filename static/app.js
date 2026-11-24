@@ -145,10 +145,12 @@ function renderChart() {
 }
 function choose(name) {
   selected = name;
+  if (!$("panorama").hidden) horizon.face();
   renderPositions();
 }
 function renderPositions() {
-  renderChart();
+  if ($("panorama").hidden) renderChart();
+  else horizon.update();
   const list = $("object-list");
   const focusedName = list.contains(document.activeElement) ? document.activeElement.dataset.object : null;
   list.replaceChildren();
@@ -342,6 +344,7 @@ window.addEventListener("hashchange", () => {
   window.scrollTo(0, 0);
   loadView();
 });
+const horizon = setupHorizon();
 syncSite();syncClock();loadView();
 if (window.browserApi) {
   $("history").hidden = true;
