@@ -37,7 +37,7 @@ async function refreshCurrent() {
   const response=await fetch("https://api.wheretheiss.at/v1/satellites/25544/tles");
   if(!response.ok) throw Error("Current orbit download failed. Try again later.");
   const data=await response.json();
-  if(data.id!=="25544" || !data.line1 || !data.line2) throw Error("Current orbit response was incomplete.");
+  if(String(data.id)!=="25544" || !data.line1 || !data.line2) throw Error("Current orbit response was incomplete.");
   const count=ingest(data.line1+"\n"+data.line2,"Where the ISS at?");
   localStorage.setItem("meridian-last-refresh",String(Date.now()));
   return count;
@@ -176,7 +176,7 @@ export async function browserApi(path,p={},payload={}) {
   await currentReady;
   if(path==="sky") {
     const date=new Date(p.at), site=siteArgs(p), orbit=orbitAt(date);
-    return {positions:[...(orbit?[station(orbit,date,...site)]:[]),...names.map(n=>body(n,date,...site))],orbit:metadata(orbit)};
+    return {positions:[...(orbit?[station(orbit,date,...site)]:[]),...names.map(n=>body(n,date,...site))].filter(Boolean),orbit:metadata(orbit)};
   }
   if(path==="path") {
     const start = new Date(p.at), site = siteArgs(p), orbit = orbitAt(start);
