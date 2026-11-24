@@ -13,6 +13,9 @@ from threading import Lock
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from nasa_oem import URL as NASA_URL, parse as parse_oem
+from nasa_vector import Trajectory
+
 from sgp4.io import verify_checksum
 from skyfield.api import EarthSatellite, Loader, load_file
 
@@ -53,6 +56,13 @@ class Store:
         self.database = self.directory / 'orbits.sqlite3'
         self.timescale = Loader(str(self.directory)).timescale(builtin=True)
         self.refresh_lock = Lock()
+        self.forecast_file = self.directory / "nasa-oem.txt"
+        self.forecast = None
+        if self.forecast_file.exists():
+            try:
+                self.forecast = Trajectory(parse_oem(self.forecast_file.read_text()))
+            except (OSError, ValueError, KeyError):
+                pass
         with closing(sqlite3.connect(self.database)) as db, db:
             db.execute('CREATE TABLE IF NOT EXISTS orbits(epoch REAL PRIMARY KEY, first TEXT, second TEXT, source TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value REAL)')
@@ -105,9 +115,17 @@ class Store:
     def orbits(self):
         with closing(sqlite3.connect(self.database)) as db:
             rows = db.execute('SELECT epoch, source FROM orbits ORDER BY epoch').fetchall()
-        return [dict(epoch=iso(datetime.fromtimestamp(t, UTC)), source=s) for t, s in rows]
+        archive = [dict(epoch=iso(datetime.fromtimestamp(t, UTC)), source=s) for t, s in rows]
+        if self.forecast:
+            archive.append(self.forecast.metadata)
+        return sorted(archive, key=lambda item: item["epoch"])
 
     def orbit_at(self, time):
+        forecast = self.forecast
+        if forecast and forecast.start <= time <= forecast.end:
+            return forecast, forecast.metadata
+        if time >= datetime.now(UTC):
+            raise OrbitUnavailable("Outside NASA forecast coverage.")
         timestamp = utc(time).timestamp()
         with closing(sqlite3.connect(self.database)) as db:
             row = db.execute('SELECT * FROM orbits ORDER BY abs(epoch - ?), epoch LIMIT 1', (timestamp,)).fetchone()
@@ -121,40 +139,42 @@ class Store:
         rows = self.orbits()
         spans = []
         margin = timedelta(days=MAX_AGE_DAYS)
+        intervals = []
         for row in rows:
-            t = datetime.fromisoformat(row['epoch'].replace('Z', '+00:00'))
-            if spans and t-margin <= spans[-1][1]:
-                spans[-1][1] = t+margin
+            if "start" in row:
+                intervals.append((datetime.fromisoformat(row["start"]), datetime.fromisoformat(row["end"])))
             else:
-                spans.append([t-margin, t+margin])
+                t = datetime.fromisoformat(row['epoch'].replace('Z', '+00:00'))
+                intervals.append((t-margin, t+margin))
+        for a, b in sorted(intervals):
+            if spans and a <= spans[-1][1]:
+                spans[-1][1] = max(b, spans[-1][1])
+            else:
+                spans.append([a, b])
         return dict(count=len(rows), first_epoch=rows[0]['epoch'], last_epoch=rows[-1]['epoch'],
                     intervals=[dict(start=iso(a), end=iso(b)) for a,b in spans], example_time=SAMPLE_TIME)
 
     def refresh(self):
         now = datetime.now(UTC)
         with self.refresh_lock, closing(sqlite3.connect(self.database)) as db, db:
-            row = db.execute("SELECT value FROM state WHERE key='refresh'").fetchone()
-            if row and now.timestamp() - row[0] < 7200:
-                return self.orbit_at(now)[1]
-            attempt = db.execute("SELECT value FROM state WHERE key='attempt'").fetchone()
+            attempt = db.execute("SELECT value FROM state WHERE key='nasa_attempt'").fetchone()
             if attempt and now.timestamp() - attempt[0] < 120:
-                try:
-                    return self.orbit_at(now)[1]
-                except OrbitUnavailable as error:
-                    raise RuntimeError('The orbit providers are unavailable. Retry in two minutes.') from error
-            db.execute("INSERT OR REPLACE INTO state VALUES('attempt',?)", (now.timestamp(),))
+                if self.forecast:
+                    return self.forecast.metadata
+                raise RuntimeError("NASA trajectory unavailable. Retry in two minutes.")
+            db.execute("INSERT OR REPLACE INTO state VALUES('nasa_attempt',?)", (now.timestamp(),))
             db.commit()
             try:
-                self.import_tle(download('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE'), 'CelesTrak GP')
-                _, metadata = self.orbit_at(now)
-            except (OSError, ValueError) as current_error:
-                try:
-                    self.fetch_history(now - timedelta(days=MAX_AGE_DAYS), now)
-                    _, metadata = self.orbit_at(now)
-                except (OSError, ValueError) as archive_error:
-                    raise RuntimeError(f'ISS refresh failed. CelesTrak: {current_error}. SatChecker: {archive_error}.') from archive_error
-            db.execute("INSERT OR REPLACE INTO state VALUES('refresh',?)", (now.timestamp(),))
-            return metadata
+                text = download(NASA_URL)
+                forecast = Trajectory(parse_oem(text))
+            except (OSError, KeyError, ValueError) as error:
+                raise RuntimeError(f"NASA trajectory refresh failed: {error}") from error
+            from tempfile import NamedTemporaryFile
+            with NamedTemporaryFile(dir=self.directory, mode="w", delete=False) as temp:
+                temp.write(text)
+            os.replace(temp.name, self.forecast_file)
+            self.forecast = forecast
+            return forecast.metadata
 
     def fetch_history(self, start, end):
         start, end = utc(start), utc(end)

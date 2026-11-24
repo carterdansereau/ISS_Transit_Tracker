@@ -312,7 +312,7 @@ function renderEvents(data) {
       } else {
         const description=id==="transits" ? "Entry "+preciseUTC(ev.entry)+" · Exit "+preciseUTC(ev.exit)+" · Duration "+ev.duration_s.toFixed(2)+" s" : "Closest separation "+degrees(ev.separation_deg);
         const localTime = new Date(ev.peak).toLocaleTimeString(undefined,{timeZoneName:"short"});
-        const age = ev.orbit ? " · Orbit epoch "+shortUTC(ev.orbit.epoch)+" ("+(Math.abs(Date.parse(ev.peak)-Date.parse(ev.orbit.epoch))/3600000).toFixed(1)+" h from event)" : "";
+        const age = ev.orbit?.end ? " · NASA forecast issued "+shortUTC(ev.orbit.epoch) : ev.orbit ? " · Orbit epoch "+shortUTC(ev.orbit.epoch)+" ("+(Math.abs(Date.parse(ev.peak)-Date.parse(ev.orbit.epoch))/3600000).toFixed(1)+" h from event)" : "";
         const controls = element("div", null, "event-actions");
         controls.append(action(id==="transits" ? "Replay transit" : "View sky", () =>
           openEvent(ev,data.passes.find(pass=>inPass(ev,pass)),id==="transits")));
@@ -325,7 +325,7 @@ function renderEvents(data) {
   summary.replaceChildren(element("span","From "+shortUTC(instant)+" · "+$("hours").value+" hours"));
   if (data.transits.length) summary.append(element("strong"," · First predicted crossing in covered time: "+data.transits[0].target+" · "+preciseUTC(data.transits[0].peak)));
   if(data.gaps?.length) {
-    summary.append(element("p","Some times have no ISS orbit within three days. Crossings in those gaps are unknown."));
+    summary.append(element("p","Some times fall outside the available NASA forecast and historical orbit coverage. Crossings in those gaps are unknown."));
     const gaps=element("details");gaps.append(element("summary","Orbit coverage gaps ("+data.gaps.length+")"));
     for(const gap of data.gaps) gaps.append(element("p",shortUTC(gap.start)+" to "+shortUTC(gap.end)));
     summary.append(gaps, action("Get historical orbits",()=>{location.hash="archive";}));
@@ -355,14 +355,14 @@ async function loadView() {
       const data=await api("sky",parameters()); if(revision!==generation) return;
       positions=data.positions;
       if(!positions.some(obj=>obj.name===selected)) selected=(positions.find(obj=>isISS(obj.name))||positions.find(obj=>obj.alt>=0)||positions[0])?.name;
-      renderPositions(); $("sky-orbit").textContent=data.orbit?"ISS orbit epoch · "+shortUTC(data.orbit.epoch)+" · "+data.orbit.source:"ISS orbit unavailable for this time. Import or retrieve a dated orbit in the archive.";
+      renderPositions(); $("sky-orbit").textContent=data.orbit?.end?"NASA/JSC forecast · "+shortUTC(data.orbit.start)+" to "+shortUTC(data.orbit.end):data.orbit?"ISS orbit epoch · "+shortUTC(data.orbit.epoch)+" · "+data.orbit.source:"ISS orbit unavailable for this time. Import or retrieve a dated orbit in the archive.";
     } else if(view==="events") {
       const data=await api("events",{...parameters(),hours:$("hours").value,target:$("event-target").value});if(revision===generation) renderEvents(data);
     } else {
       const data=await api("archive");if(revision!==generation) return;
       const parent=$("orbits");parent.replaceChildren();
       if(!data.orbits.length) parent.textContent="No ISS orbits saved yet. Fetch the latest orbit or import a historical set.";
-      for(const orbit of data.orbits) row(parent,shortUTC(orbit.epoch),orbit.source,action("View sky",()=>{instant=new Date(orbit.epoch);live=false;track=[];syncClock();location.hash="sky";}));
+      for(const orbit of data.orbits) row(parent,shortUTC(orbit.epoch),orbit.end ? orbit.source+" · through "+shortUTC(orbit.end) : orbit.source,action("View sky",()=>{instant=new Date(orbit.epoch);live=false;track=[];syncClock();location.hash="sky";}));
     }
   } catch(err) {
     if(revision!==generation) return;

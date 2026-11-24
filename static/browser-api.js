@@ -33,38 +33,61 @@ const saved = records;
 records = [];
 for (const [name, text] of builtIn) ingest(text, "Archived ISS orbit · " + name);
 for (const r of saved) ingest(r.first + "\n" + r.second, r.source);
+let forecast;
 async function refreshCurrent() {
-  const response=await fetch("https://api.wheretheiss.at/v1/satellites/25544/tles");
-  if(!response.ok) throw Error("Current orbit download failed. Try again later.");
-  const data=await response.json();
-  if(String(data.id)!=="25544" || !data.line1 || !data.line2) throw Error("Current orbit response was incomplete.");
-  const count=ingest(data.line1+"\n"+data.line2,"Where the ISS at?");
-  localStorage.setItem("meridian-last-refresh",String(Date.now()));
-  return count;
+  const response = await fetch("./nasa-forecast.json",{cache:"no-cache"});
+  if (!response.ok) throw Error("NASA trajectory download failed.");
+  const data = await response.json(), rows = data.rows;
+  if (!Array.isArray(rows) || rows.length < 2) throw Error("Incomplete NASA trajectory.");
+  forecast = {...data,start:new Date(rows[0][0]).toISOString(),end:new Date(rows.at(-1)[0]).toISOString()};
+  return 1;
 }
-const currentReady=(async()=>{
-  if(Date.now()-Number(localStorage.getItem("meridian-last-refresh"))>3*3600000) {
-    try {await refreshCurrent(); return;} catch {}
-  }
-  try {
-    const response=await fetch("./current.tle");
-    if(response.ok) ingest(await response.text(),"CelesTrak GP · published fallback");
-  } catch {}
-})();
+const currentReady = refreshCurrent().catch(()=>{});
 
 function orbitAt(date) {
   const time = +date;
+  if (forecast && time>=forecast.rows[0][0] && time<=forecast.rows.at(-1)[0]) return forecast;
+  if (time >= Date.now()) return null;
   const best = records.reduce((a,b) => Math.abs(Date.parse(a.epoch)-time) < Math.abs(Date.parse(b.epoch)-time) ? a : b);
   return Math.abs(Date.parse(best.epoch)-time) <= 3*86400000 ? best : null;
 }
-const metadata = orbit => orbit && ({epoch: orbit.epoch, source: orbit.source});
+const metadata = orbit => orbit && ({epoch: orbit.epoch, source: orbit.source,start:orbit.start,end:orbit.end});
 function body(name, date, lat, lon, elevation) {
   const observer = new astronomy.Observer(lat, lon, elevation);
   const eq = astronomy.Equator(astronomy.Body[name], date, observer, true, true);
   const h = astronomy.Horizon(date, observer, eq.ra, eq.dec, null);
   return {name, alt: h.altitude, az: h.azimuth, distance_km: eq.dist * astronomy.KM_PER_AU};
 }
+function forecastPosition(orbit,date) {
+  const rows=orbit.rows, time=+date;
+  if (time<rows[0][0] || time>rows.at(-1)[0]) return null;
+  let lo=0, hi=rows.length-1;
+  while (hi-lo>1) {
+    const mid=(lo+hi)>>>1;
+    if (rows[mid][0]<=time) lo=mid; else hi=mid;
+  }
+  const p=rows[lo], q=rows[hi], dt=(q[0]-p[0])/1000, u=(time-p[0])/(1000*dt);
+  // Quintic Hermite interpolation constrained by the OEM endpoint states and gravity.
+  const gravity=row=>-398600.4418/Math.hypot(row[1],row[2],row[3])**3;
+  const g0=gravity(p), g1=gravity(q);
+  return [1,2,3].map(i=>{
+    const v=p[i+3]*dt, w=q[i+3]*dt, delta=q[i]-p[i];
+    const a=3*delta-2*v-w, b=-2*delta+v+w;
+    const c=g0*p[i]*dt*dt/2-a, d=g1*q[i]*dt*dt/2-a-3*b-c;
+    return p[i]+u*(v+u*(a+u*b))+u*u*(1-u)**2*(c+u*d);
+  });
+}
 function station(orbit, date, lat, lon, elevation) {
+  if (orbit.rows) {
+    const xyz=forecastPosition(orbit,date);
+    if (!xyz) return null;
+    const observer=new astronomy.Observer(lat,lon,elevation);
+    const origin=astronomy.ObserverVector(date,observer,false);
+    const ray=new astronomy.Vector(xyz[0]/astronomy.KM_PER_AU-origin.x,
+      xyz[1]/astronomy.KM_PER_AU-origin.y,xyz[2]/astronomy.KM_PER_AU-origin.z,origin.t);
+    const hor=astronomy.HorizonFromVector(astronomy.RotateVector(astronomy.Rotation_EQJ_HOR(origin.t,observer),ray));
+    return {name:"ISS",alt:hor.lat,az:hor.lon,distance_km:hor.dist*astronomy.KM_PER_AU};
+  }
   const pv = satellite.propagate(orbit.satrec, date);
   if (!pv?.position) return null;
   const ecf = satellite.eciToEcf(pv.position, satellite.gstime(date));
@@ -100,22 +123,29 @@ function boundary(f, a, b) {
   }
   return (a+b)/2;
 }
-function events(p) {
+async function events(p) {
   const start=Date.parse(p.at), end=start+Number(p.hours || 24)*3600000, site=siteArgs(p);
   const result={passes:[],transits:[],near_misses:[],gaps:[]};
   let gapStart=null, passStart=null, passPeak=null, passPeakAlt=-90;
   const step=10000, passes=[];
-  for(let t=start;t<=end+step;t+=step) {
+  let passOrbit=null;
+  for(let t=start;t<=end;t+=step) {
+    if ((t-start)%(step*500)===0) await new Promise(resolve=>setTimeout(resolve,0));
     const orbit=orbitAt(new Date(t)), position=orbit && station(orbit,new Date(t),...site);
     const above=position && position.alt>=0;
     if(!orbit && gapStart===null) gapStart=t;
     if(orbit && gapStart!==null) {result.gaps.push({start:new Date(gapStart).toISOString(),end:new Date(t).toISOString()});gapStart=null;}
-    if(above && passStart===null) {passStart=t;passPeak=t;passPeakAlt=position.alt;}
+    if(passStart!==null && passOrbit!==orbit) {
+      passes.push([passStart,t-step,passPeak]);passStart=null;passPeakAlt=-90;
+    }
+    if(above && passStart===null) {passOrbit=orbit;passStart=t;passPeak=t;passPeakAlt=position.alt;}
     if(above && position.alt>passPeakAlt) {passPeak=t;passPeakAlt=position.alt;}
-    if(!above && passStart!==null) {passes.push([passStart,Math.min(t,end),passPeak]);passStart=null;passPeakAlt=-90;}
+    if(!above && passStart!==null) {passes.push([passStart,orbit ? t : t-step,passPeak]);passStart=null;passPeakAlt=-90;}
   }
+  if(passStart!==null) passes.push([passStart,end,passPeak]);
   if(gapStart!==null) result.gaps.push({start:new Date(gapStart).toISOString(),end:new Date(end).toISOString()});
   for(const [rise,set,coarsePeak] of passes) {
+    await new Promise(resolve=>setTimeout(resolve,0));
     const orbit=orbitAt(new Date(coarsePeak)), peak=minTime(t=>-station(orbit,new Date(t),...site).alt,Math.max(rise,coarsePeak-step),Math.min(set,coarsePeak+step));
     const top=station(orbit,new Date(peak),...site);
     const track=[];
@@ -141,8 +171,8 @@ function events(p) {
             body_radius:Math.asin(radii[target]/hit.object.distance_km)*180/Math.PI};
           const f=t=>sample(orbit,new Date(t),site,target).margin;
           let entry=closest, exit=closest;
-          while(entry>rise && f(entry)<=0) entry-=500;
-          while(exit<set && f(exit)<=0) exit+=500;
+          while(entry>rise && f(entry)<=0) entry=Math.max(rise,entry-500);
+          while(exit<set && f(exit)<=0) exit=Math.min(set,exit+500);
           const first=boundary(f,entry,closest), last=boundary(f,closest,exit);
           Object.assign(row,{entry:new Date(first).toISOString(),exit:new Date(last).toISOString(),duration_s:(last-first)/1000});
           result.transits.push(row);
@@ -193,7 +223,7 @@ export async function browserApi(path,p={},payload={}) {
   }
   if(path==="events") return events(p);
   if(path==="corridor") return corridor(p);
-  if(path==="archive") return {orbits:records.map(metadata),count:records.length};
+  if(path==="archive") return {orbits:[...records,...(forecast?[forecast]:[])].map(metadata),count:records.length+Number(Boolean(forecast))};
   if(path==="import") return {count:ingest(payload.tle,"Imported TLE")};
   if(path==="refresh") {
     return {count:await refreshCurrent()};

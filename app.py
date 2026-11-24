@@ -9,6 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from time import sleep
 from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 
@@ -40,9 +41,12 @@ def number(values, key, low, high, default=None):
 def windows(start, end, epochs):
     """Split at changes to the nearest valid orbital element set."""
     age = timedelta(days=MAX_AGE_DAYS)
-    dates = (instant(e["epoch"]) for e in epochs)
+    forecasts = [e for e in epochs if "start" in e]
+    dates = (instant(e["epoch"]) for e in epochs if "start" not in e)
     epochs = sorted({t for t in dates if start - age <= t <= end + age})
     cuts = {start, end}
+    for forecast in forecasts:
+        cuts.update((instant(forecast["start"]), instant(forecast["end"])))
     for i, epoch in enumerate(epochs):
         if i == 0 or epoch - epochs[i-1] > 2 * age:
             cuts.add(epoch - age)
@@ -64,6 +68,11 @@ class Tracker:
             self.store.refresh()
         except (ValueError, RuntimeError, OSError) as error:
             print(f"Live orbit refresh unavailable: {error}", file=sys.stderr)
+
+    def refresh_forecasts(self):
+        while True:
+            self.warm_current_orbit()
+            sleep(6 * 3600)
 
     def query(self, path, args):
         if path == "/api/archive":
@@ -89,7 +98,7 @@ class Tracker:
             return {"points": self.engine.corridor(at, target, orbit), "orbit": meta}
         if path != "/api/events":
             raise ValueError("Unknown endpoint.")
-        end = at + timedelta(hours=number(args, "hours", 1, 168, 24))
+        end = at + timedelta(hours=number(args, "hours", 1, 360, 24))
         target = args.get("target", "Sun and Moon")
         if target == "Sun and Moon":
             targets = ("Sun", "Moon")
@@ -106,7 +115,10 @@ class Tracker:
                 continue
             # Padding preserves pass rise/set and transit contacts at window edges.
             pad = timedelta(minutes=15)
-            found = self.engine.events(*site, a-pad, b+pad, orbit, targets)
+            left, right = a-pad, b+pad
+            if "start" in meta:
+                left, right = max(left, instant(meta["start"])), min(right, instant(meta["end"]))
+            found = self.engine.events(*site, left, right, orbit, targets)
             for kind, rows in found.items():
                 for row in rows:
                     peak = instant(row["peak"])
@@ -186,12 +198,14 @@ def main():
     args = parser.parse_args()
     tracker = Tracker()
     if args.command == "sky":
+        if instant(args.at) >= datetime.now(timezone.utc) and not tracker.store.forecast:
+            tracker.warm_current_orbit()
         print(json.dumps(tracker.query("/api/sky", vars(args)), indent=2))
         return
     address = ("127.0.0.1", getattr(args, "port", 8000))
     with ThreadingHTTPServer(address, Handler) as server:
         server.tracker = tracker
-        Thread(target=tracker.warm_current_orbit, daemon=True).start()
+        Thread(target=tracker.refresh_forecasts, daemon=True).start()
         print(f"ISS Transit Tracker at http://{address[0]}:{server.server_port}", flush=True)
         server.serve_forever()
 

@@ -3,6 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 from importlib.resources import files
 import numpy as np
+from nasa_vector import Trajectory
 from skyfield.api import EarthSatellite, load, load_file, wgs84
 from skyfield.framelib import itrs
 
@@ -55,7 +56,7 @@ class Engine:
         self.earth = self.eph["earth"]
 
     def satellite(self, orbit):
-        if isinstance(orbit, EarthSatellite):
+        if isinstance(orbit, (EarthSatellite, Trajectory)):
             return orbit
         return EarthSatellite(*orbit[-2:], "ISS", self.ts)
 
@@ -78,7 +79,10 @@ class Engine:
         if target == "ISS" and orbit is None:
             return []
         step = 10 if target == "ISS" else 300
-        times = self.ts.from_datetimes([at + timedelta(seconds=i * step) for i in range(73)])
+        dates = [at + timedelta(seconds=i * step) for i in range(73)]
+        if target == "ISS" and isinstance(orbit, Trajectory):
+            dates = [date for date in dates if date <= orbit.end]
+        times = self.ts.from_datetimes(dates)
         if target == "ISS":
             vector = (self.satellite(orbit) - site).at(times)
         elif target in BODIES:
@@ -172,6 +176,10 @@ class Engine:
             raise ValueError("Choose Sun or Moon")
         ts = self.ts.from_datetime(at)
         seconds = np.arange(-30,31,1)
+        if isinstance(orbit, Trajectory):
+            seconds = seconds[(seconds >= (orbit.start-at).total_seconds()) & (seconds <= (orbit.end-at).total_seconds())]
+            if len(seconds) < 2:
+                return []
         times = ts + seconds/86400
         station = self.satellite(orbit).at(times).frame_xyz(itrs).km.T
         body = self.earth.at(times).observe(self.eph[BODIES[target]]).apparent().frame_xyz(itrs).km.T
