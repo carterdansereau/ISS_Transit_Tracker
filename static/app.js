@@ -125,6 +125,15 @@ function renderChart() {
   }
   const points = track.filter(p => p.alt >= 0).map(p => chartPoint(p.alt,p.az).join(","));
   if (points.length) svg(map,"polyline",{ points:points.join(" "), fill:"none", stroke:"#f4b670", "stroke-dasharray":"4 3", "stroke-width":2 });
+  for (const [name, path] of horizon.paths) {
+    let connected = false, d = "";
+    for (const p of path) {
+      if (!p || p.alt < 0) { connected = false; continue; }
+      d += (connected ? "L" : "M") + chartPoint(p.alt,p.az).join(" ");
+      connected = true;
+    }
+    if (d) svg(map,"path",{d,fill:"none",stroke:pathColors[name],"stroke-dasharray":"4 3"});
+  }
   const seenLabels = [];
   const visible = positions.filter(obj => obj.alt >= 0).sort((a,b) => Number(b.name === selected) - Number(a.name === selected));
   for (const obj of visible) {
@@ -133,7 +142,8 @@ function renderChart() {
     const group = svg(map,"g",{cursor:"pointer"});
     svg(group,"title",{},obj.name+" · altitude "+degrees(obj.alt)+" · azimuth "+degrees(obj.az));
     svg(group,"circle",{cx:x,cy:y,r:10, fill:color,opacity:.11});
-    svg(group,"circle",{cx:x,cy:y,r:obj.name===selected?5:3.8,fill:color});
+    if (isISS(obj.name)) svg(group,"use",{href:"#station-icon",transform:"translate("+x+" "+y+") rotate(-20)"});
+    else svg(group,"circle",{cx:x,cy:y,r:obj.name===selected?5:3.8,fill:color});
     if (obj.name===selected) svg(group,"circle",{cx:x,cy:y,r:10,fill:"none",stroke:color});
     const labelY = [y-12,y+19,y-27,y+34].find(candidate => seenLabels.every(p => Math.abs(p[0]-x)>54 || Math.abs(p[1]-candidate)>14));
     if (labelY !== undefined) {
@@ -149,8 +159,7 @@ function choose(name) {
   renderPositions();
 }
 function renderPositions() {
-  if ($("panorama").hidden) renderChart();
-  else horizon.update();
+  horizon.update();
   const list = $("object-list");
   const focusedName = list.contains(document.activeElement) ? document.activeElement.dataset.object : null;
   list.replaceChildren();

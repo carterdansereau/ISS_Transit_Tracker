@@ -33,11 +33,12 @@
       <div class="sky-layout">
         <article class="panel chart-card">
           <div class="card-head"><div><p class="eyebrow">Horizon view</p><h2>All-sky chart</h2></div><span id="chart-date" class="mono"></span></div>
-          <div class="sky-tools"><div class="mode-switch" role="group" aria-label="Horizon display"><button id="flat" aria-pressed="true">2D chart</button><button id="depth" aria-pressed="false">3D sky</button></div><label id="trail-control" hidden><input type="checkbox" id="trail" checked> Show path</label></div>
+          <div class="sky-tools"><div class="mode-switch" role="group" aria-label="Horizon display"><button id="flat" aria-pressed="true">2D chart</button><button id="depth" aria-pressed="false">3D sky</button></div><button id="expand-chart" aria-pressed="false">⛶ Full screen</button></div>
           <canvas hidden id="panorama" tabindex="0" aria-label="Local sky. Drag or use arrow keys to look around. Select a visible object from Sky positions to face it."></canvas>
           <p id="sky-guide" hidden></p>
           <svg id="sky-map" class="sky-map" viewBox="0 0 520 460" role="img" aria-label="Observer’s sky chart with north up and east left"></svg>
-          <div class="chart-foot"><span><i class="key iss"></i> ISS</span><span><i class="key body"></i> Solar system</span><span>Looking up · east on left</span></div>
+          <details class="paths"><summary>Object paths</summary><p>ISS · next 12 minutes. Solar system · next 6 hours. Only above-horizon segments are drawn.</p><div id="path-options"></div><small id="path-status" role="status"></small></details>
+          <div class="chart-foot"><span><svg viewBox="-12 -8 24 16" width="22" height="16" aria-hidden="true"><path id="station-icon" fill="#ffc27b" d="M-10 -5h6v4h-6z M-10 1h6v4h-6z M4 -5h6v4H4z M4 1h6v4H4z M-2 -4h4v8h-4z M-5 -1H5v2H-5z"/></svg> <span id="station-status">ISS</span></span><span><i class="key body"></i> Solar system</span><span>Looking up · east on left</span></div>
         </article>
         <aside class="panel object-card"><div class="card-head"><div><p class="eyebrow">Object index</p><h2>Sky positions</h2></div></div>
           <div class="object-labels"><span>Object</span><span>Altitude</span><span>Azimuth</span></div><div id="object-list"></div>

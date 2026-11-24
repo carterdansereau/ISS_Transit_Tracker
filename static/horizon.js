@@ -1,10 +1,46 @@
 "use strict";
 
+const pathColors = {
+  ISS:"#ffc27b", Sun:"#f9db62", Moon:"#dae7ff", Mercury:"#bdb4ae", Venus:"#efb3cc",
+  Mars:"#f38b79", Jupiter:"#dca580", Saturn:"#c9c982", Uranus:"#7dd3c7", Neptune:"#86aaf7"
+};
+
 function setupHorizon() {
   const canvas = $("panorama"), ctx = canvas.getContext("2d");
-  const guide = $("sky-guide"), trail = $("trail"), rad = Math.PI / 180;
+  const guide = $("sky-guide"), rad = Math.PI / 180;
   const compass = ["N","NE","E","SE","S","SW","W","NW"];
-  let heading = 0, pitch = 22, samples = [], pathKey = "", pathStatus = "", drag;
+  let heading = 0, pitch = 22, drag;
+  const paths = new Map(), requests = new Map(), controls = new Map();
+  const stationShape = new Path2D($("station-icon").getAttribute("d"));
+  let edited = false;
+  for (const [name,color] of Object.entries(pathColors)) {
+    const label = element("label"), input = element("input");
+    input.type = "checkbox";
+    label.style.setProperty("--path-color",color);
+    label.append(input, name);
+    $("path-options").append(label);
+    controls.set(name,input);
+    input.onchange = () => { edited = true; update(); };
+  }
+  const card = canvas.closest("article"), expand = $("expand-chart");
+  function syncFullscreen() {
+    const full = document.fullscreenElement === card || card.classList.contains("expanded");
+    expand.textContent = full ? "Exit full screen" : "⛶ Full screen";
+    expand.setAttribute("aria-pressed",String(full));
+  }
+  expand.onclick = async () => {
+    if (document.fullscreenElement === card) await document.exitFullscreen();
+    else if (card.classList.contains("expanded")) card.classList.remove("expanded");
+    else {
+      try { await card.requestFullscreen(); }
+      catch { card.classList.add("expanded"); }
+    }
+    syncFullscreen();
+  };
+  document.addEventListener("fullscreenchange",syncFullscreen);
+  document.addEventListener("keydown",e => {
+    if (e.key === "Escape" && card.classList.contains("expanded")) expand.click();
+  });
   function face() {
     const body = positions.find(p => p.name === selected);
     if (body) { heading = body.az; pitch = Math.max(5,body.alt); }
@@ -48,7 +84,9 @@ function setupHorizon() {
       const xy = project(0,az);
       if (xy) { ctx.fillStyle = "#d1e3dc"; ctx.fillText(compass[az/45],xy[0],xy[1]+16); }
     }
-    ctx.setLineDash([5,5]); line(samples,"#ffc580"); ctx.setLineDash([]);
+    ctx.setLineDash([5,5]);
+    for (const [name,path] of paths) line(path,pathColors[name]);
+    ctx.setLineDash([]);
     ctx.textAlign = "left";
     for (const p of positions) {
       if (p.alt < 0) continue;
@@ -56,7 +94,9 @@ function setupHorizon() {
       if (!xy) continue;
       const [x,y] = xy;
       ctx.fillStyle = isISS(p.name) ? "#ffc27b" : "#a4ddbf";
-      ctx.beginPath(); ctx.arc(x,y,4,0,2*Math.PI); ctx.fill();
+      if (isISS(p.name)) {
+        ctx.save(); ctx.translate(x,y); ctx.rotate(-20*rad); ctx.fill(stationShape); ctx.restore();
+      } else { ctx.beginPath(); ctx.arc(x,y,4,0,2*Math.PI); ctx.fill(); }
       if (p.name===selected) {
         ctx.strokeStyle = ctx.fillStyle; ctx.beginPath(); ctx.arc(x,y,8,0,2*Math.PI); ctx.stroke();
       }
@@ -64,35 +104,52 @@ function setupHorizon() {
       ctx.lineWidth = 1; ctx.fillText(p.name,x+11,y+4);
     }
     const az = (heading%360+360)%360;
-    document.querySelector(".chart-foot span:last-child").textContent =
+    document.querySelector(".chart-foot > span:last-child").textContent =
       compass[Math.round(az/45)%8]+" · "+Math.round(az)%360+"° az · "+Math.round(pitch)+"° alt";
-    guide.textContent = "Drag or use arrow keys to look around. "+pathStatus;
+    guide.textContent = "Drag or use arrow keys to look around.";
   }
-  async function update() {
-    const enabled = !canvas.hidden && trail.checked && positions.some(p=>p.name===selected);
-    const params = {...parameters(),target:selected};
-    const key = enabled ? JSON.stringify(params) : "";
-    if (key === pathKey) { draw(); return; }
-    pathKey = key; samples = []; pathStatus = enabled ? "Calculating path…" : ""; draw();
-    if (!enabled) return;
-    try {
-      const result = await api("path",params);
-      if (pathKey !== key) return;
-      samples = result;
-      pathStatus = selected+" · next "+(isISS(selected) ? "12 minutes" : "6 hours")+
-        (samples.some(p=>p && p.alt>=0) ? "" : " · below horizon");
-    } catch { if (pathKey !== key) return; pathStatus = "Path unavailable."; }
-    draw();
+  function paint() {
+    if (canvas.hidden) renderChart(); else draw();
+  }
+  function update() {
+    const station = positions.find(p=>isISS(p.name));
+    $("station-status").textContent = station ? "ISS · "+degrees(Math.abs(station.alt))+
+      (station.alt < 0 ? " below horizon" : " above horizon") :
+      (positions.length ? "ISS · orbit unavailable" : "ISS · position unavailable");
+    const params = parameters();
+    for (const [name,input] of controls) {
+      input.disabled = !positions.some(p=>p.name===name);
+      if (!edited) input.checked = !canvas.hidden && name === selected;
+      if (!input.checked || input.disabled) { requests.delete(name); paths.delete(name); continue; }
+      const key = JSON.stringify(params);
+      if (requests.get(name)?.key === key) continue;
+      const request = {key,state:"loading"};
+      requests.set(name,request);
+      paths.delete(name);
+      api("path",{...params,target:name}).then(points=>{
+        if (requests.get(name)!==request) return;
+        paths.set(name,points);
+        request.state = "ready";
+      }).catch(()=>{ request.state = "failed"; }).finally(()=>{
+        if (requests.get(name)===request) { report(); paint(); }
+      });
+    }
+    report(); paint();
+  }
+  function report() {
+    const failed = [...requests].filter(([,r])=>r.state==="failed").map(([name])=>name);
+    $("path-status").textContent = failed.length ? "Path unavailable for "+failed.join(", ") :
+      [...requests.values()].some(r=>r.state==="loading") ? "Calculating paths…" : "";
   }
   function mode(depth) {
-    canvas.hidden = guide.hidden = $("trail-control").hidden = !depth;
+    canvas.hidden = guide.hidden = !depth;
     $("sky-map").toggleAttribute("hidden",depth);
     $("depth").setAttribute("aria-pressed",String(depth)); $("flat").setAttribute("aria-pressed",String(!depth));
     if (depth) { face(); canvas.focus(); }
-    else document.querySelector(".chart-foot span:last-child").textContent = "Looking up · east on left";
-    update(); if (!depth) renderChart();
+    else document.querySelector(".chart-foot > span:last-child").textContent = "Looking up · east on left";
+    update();
   }
-  $("flat").onclick = ()=>mode(false); $("depth").onclick = ()=>mode(true); trail.onchange = update;
+  $("flat").onclick = ()=>mode(false); $("depth").onclick = ()=>mode(true);
   function pan(dx,dy) {
     heading = (heading+dx+360)%360; pitch = Math.max(0,Math.min(90,pitch+dy)); draw();
   }
@@ -111,5 +168,5 @@ function setupHorizon() {
   };
   canvas.onlostpointercapture = ()=>{ drag = null; };
   new ResizeObserver(draw).observe(canvas);
-  return {face,update};
+  return {face,update,paths};
 }
