@@ -77,3 +77,12 @@ footer { border-top:1px solid var(--line); margin-top:2.6rem!important; padding:
 [hidden] { display:none!important; }
 @media(max-width:820px) { .slider-label { flex:1 0 100%; }.sky-layout,.archive-layout {grid-template-columns:1fr;}.sky-map {height:min(460px,85vw);} }
 @media(max-width:580px) { .mast-inner {align-items:flex-start;flex-direction:column;padding-top:.9rem;}nav {gap:1.2rem;}nav a {padding:.65rem 0;} .page-title {align-items:flex-start;flex-direction:column;margin:1.3rem 0;} .time-bar {gap:.75rem;padding:.8rem;} .card-head,.event-body {padding-left:1rem;padding-right:1rem;}.chart-foot {padding:.7rem;gap:.55rem;flex-wrap:wrap;}.chart-foot span:last-child {margin-left:0;}.source-note {align-items:flex-start;flex-direction:column;}.event-row {align-items:flex-start;flex-direction:column;}.sky-map {height:auto;}.wrap {width:94%;}.card-head .mono {max-width:6rem;text-align:right;}.time-actions {flex-wrap:wrap;} }
+.sky-tools { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.65rem 1rem; }
+.mode-switch { display:inline-flex; gap:2px; padding:3px; background:#101f25; border-radius:8px; }
+.mode-switch button { background:transparent; border:0; padding:.4rem .75rem; }
+.mode-switch button[aria-pressed=true] { background:#305048; color:#d6f6e1; }
+#trail-control { display:flex; align-items:center; gap:.4rem; }
+#trail { width:auto; }
+#panorama { display:block; width:100%; height:clamp(285px,49vh,540px); touch-action:none; cursor:grab; }
+#panorama:active { cursor:grabbing; }
+#sky-guide { font-size:.82rem; color:#b6c9ca; margin:.65rem 1rem; }

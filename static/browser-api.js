@@ -178,6 +178,15 @@ export async function browserApi(path,p={},payload={}) {
     const date=new Date(p.at), site=siteArgs(p), orbit=orbitAt(date);
     return {positions:[...(orbit?[station(orbit,date,...site)]:[]),...names.map(n=>body(n,date,...site))],orbit:metadata(orbit)};
   }
+  if(path==="path") {
+    const start = new Date(p.at), site = siteArgs(p), orbit = orbitAt(start);
+    if (p.target === "ISS" && !orbit) return [];
+    const step = p.target === "ISS" ? 10000 : 300000;
+    return Array.from({length:73}, (_, i) => {
+      const time = new Date(+start + i * step);
+      return p.target === "ISS" ? station(orbit,time,...site) : body(p.target,time,...site);
+    });
+  }
   if(path==="events") return events(p);
   if(path==="corridor") return corridor(p);
   if(path==="archive") return {orbits:records.map(metadata),count:records.length};

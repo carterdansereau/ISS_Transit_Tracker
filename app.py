@@ -73,11 +73,13 @@ class Tracker:
         elevation = number(args, "elevation", -500, 10000, 0)
         at = instant(args["at"])
         site = lat, lon, elevation
-        if path == "/api/sky":
+        if path in ("/api/sky", "/api/path"):
             try:
                 orbit, meta = self.store.orbit_at(at)
             except OrbitUnavailable:
                 orbit, meta = None, None
+            if path == "/api/path":
+                return self.engine.sky_path(*site, at, args["target"], orbit)
             return {"positions": self.engine.positions(*site, at, orbit), "orbit": meta}
         if path == "/api/corridor":
             orbit, meta = self.store.orbit_at(at)
@@ -143,6 +145,7 @@ class Handler(BaseHTTPRequestHandler):
             self.api(lambda: self.server.tracker.query(url.path, args))
             return
         assets = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
+                  "/horizon.js": ("horizon.js", "text/javascript"),
                   "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
         if url.path not in assets:
             self.send_error(HTTPStatus.NOT_FOUND)

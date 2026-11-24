@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0c171c">
   <title>Meridian · ISS Transit Tracker</title>
   <link rel="stylesheet" href="style.css">
+  <script src="horizon.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -32,6 +33,9 @@
       <div class="sky-layout">
         <article class="panel chart-card">
           <div class="card-head"><div><p class="eyebrow">Horizon view</p><h2>All-sky chart</h2></div><span id="chart-date" class="mono"></span></div>
+          <div class="sky-tools"><div class="mode-switch" role="group" aria-label="Horizon display"><button id="flat" aria-pressed="true">2D chart</button><button id="depth" aria-pressed="false">3D sky</button></div><label id="trail-control" hidden><input type="checkbox" id="trail" checked> Show path</label></div>
+          <canvas hidden id="panorama" tabindex="0" aria-label="Local sky. Drag or use arrow keys to look around. Select a visible object from Sky positions to face it."></canvas>
+          <p id="sky-guide" hidden></p>
           <svg id="sky-map" class="sky-map" viewBox="0 0 520 460" role="img" aria-label="Observer’s sky chart with north up and east left"></svg>
           <div class="chart-foot"><span><i class="key iss"></i> ISS</span><span><i class="key body"></i> Solar system</span><span>Looking up · east on left</span></div>
         </article>
