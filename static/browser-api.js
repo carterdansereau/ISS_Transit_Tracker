@@ -78,10 +78,11 @@ function separation(a,b) {
   return Math.acos(Math.max(-1,Math.min(1,Math.sin(a.alt*rad)*Math.sin(b.alt*rad)+Math.cos(a.alt*rad)*Math.cos(b.alt*rad)*Math.cos((a.az-b.az)*rad))))/rad;
 }
 function siteArgs(p) { return [Number(p.lat), Number(p.lon), Number(p.elevation)]; }
+const radii = {Sun:695700,Moon:1737.4,Mercury:2439.4,Venus:6051.8,Mars:3389.5,Jupiter:69911,Saturn:58232,Uranus:25362,Neptune:24622};
 function sample(orbit, date, site, target) {
   const iss = station(orbit,date,...site), object = body(target,date,...site);
   if (!iss) return null;
-  const radius = Math.asin((target === "Sun" ? 695700 : 1737.4)/object.distance_km)*180/Math.PI + Math.asin(.055/iss.distance_km)*180/Math.PI;
+  const radius = Math.asin(radii[target]/object.distance_km)*180/Math.PI + Math.asin(.055/iss.distance_km)*180/Math.PI;
   return {iss, object, sep: separation(iss,object), margin: separation(iss,object)-radius};
 }
 function minTime(f, a, b) {
@@ -120,7 +121,7 @@ function events(p) {
     const track=[];
     for(let t=rise;t<=set;t+=4000) {const s=station(orbit,new Date(t),...site);track.push({time:new Date(t).toISOString(),alt:s.alt,az:s.az});}
     result.passes.push({rise:new Date(rise).toISOString(),peak:new Date(peak).toISOString(),set:new Date(set).toISOString(),peak_alt:top.alt,peak_az:top.az,track});
-    for(const target of ["Sun","Moon"]) {
+    for(const target of (p.target && p.target!=="Sun and Moon" ? [p.target] : ["Sun","Moon"])) {
       let prev=Infinity, current=Infinity;
       const candidates=[];
       for(let t=rise;t<=set+2000;t+=2000) {
@@ -135,6 +136,9 @@ function events(p) {
         if(hit.sep>3 || hit.object.alt<0) continue;
         const row={target,peak:new Date(closest).toISOString(),alt:hit.object.alt,az:hit.object.az,separation_deg:hit.sep,orbit:metadata(orbit)};
         if(hit.margin<=0) {
+          row.detail={iss_alt:hit.iss.alt,iss_az:hit.iss.az,
+            iss_radius:Math.asin(.055/hit.iss.distance_km)*180/Math.PI,
+            body_radius:Math.asin(radii[target]/hit.object.distance_km)*180/Math.PI};
           const f=t=>sample(orbit,new Date(t),site,target).margin;
           let entry=closest, exit=closest;
           while(entry>rise && f(entry)<=0) entry-=500;

@@ -11,6 +11,7 @@ try {
 let instant = new Date(), live = true, selected = "", positions = [], track = [], generation = 0;
 let corridorGeneration = 0, pendingSky = false;
 let previousObservation = null;
+let transitReplay = null, openSample = false;
 const titles = { sky: "Observer’s sky", events: "Passes & transits", archive: "Orbit archive" };
 const activeView = () => Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "sky";
 const shortUTC = value => new Date(value).toISOString().replace("T", " ").slice(0, 19) + " UTC";
@@ -189,13 +190,14 @@ function showReplayControl() {
       site = saved.site;
       instant = saved.live ? new Date() : saved.instant;
       live = saved.live;
-      $("hours").value = saved.hours;
+      $("hours").value = saved.hours; $("event-target").value = saved.target;
       track = [];
       syncSite(); syncClock(); loadView();
     }));
   } else {
     controls.append(action("Replay a historical solar transit", () => {
-      previousObservation = { site, instant, live, hours: $("hours").value };
+      previousObservation = { site, instant, live, hours: $("hours").value, target: $("event-target").value };
+      $("event-target").value = "Sun"; openSample = true;
       site = { lat: 48.98489, lon: -93.13602, elevation: 0, name: "Replay site · 48.985° N, 93.136° W" };
       instant = new Date("2024-04-25T13:45:00Z");
       live = false;
@@ -257,7 +259,48 @@ async function showCorridor(event) {
     area.append(reuse);
   } catch(err) { if(revision===corridorGeneration) area.textContent=err.message; }
 }
+function openEvent(ev, pass, crossing) {
+  instant = new Date(ev.peak);
+  live = false;
+  selected = "ISS";
+  track = pass?.track || [];
+  transitReplay = crossing ? {ev, site} : null;
+  syncClock();
+  location.hash = "sky";
+}
+function renderTransitDetail() {
+  const panel = $("transit-detail"), ev = transitReplay?.ev;
+  panel.hidden = !ev || transitReplay.site !== site || Date.parse(ev.peak) !== +instant;
+  if (panel.hidden) { transitReplay = null; return; }
+  panel.replaceChildren(element("h2",ev.target+" transit at closest approach"),
+    element("p",preciseUTC(ev.peak)+" · "+ev.duration_s.toFixed(2)+" s from entry to exit"));
+  const d = ev.detail, rad = Math.PI/180, delta = (d.iss_az-ev.az)*rad;
+  const alt = ev.alt*rad, issAlt = d.iss_alt*rad;
+  // Position angle in the target's tangent plane, with increasing altitude up.
+  const east = Math.cos(issAlt)*Math.sin(delta);
+  const up = Math.sin(issAlt)*Math.cos(alt)-Math.cos(issAlt)*Math.sin(alt)*Math.cos(delta);
+  const angle = Math.atan2(east,up);
+  const scale = 77/Math.max(d.body_radius,ev.separation_deg+d.iss_radius);
+  const map = document.createElementNS(svgNS,"svg");
+  map.setAttribute("viewBox","0 0 260 180"); map.setAttribute("role","img");
+  map.setAttribute("aria-label","Predicted ISS overlap with "+ev.target+" at closest approach");
+  panel.append(map);
+  svg(map,"circle",{cx:130,cy:90,r:d.body_radius*scale,fill:ev.target==="Sun"?"#f6cd76":"#c5d9df"});
+  const x = 130+scale*ev.separation_deg*Math.sin(angle), y = 90-scale*ev.separation_deg*Math.cos(angle);
+  const radius = scale*d.iss_radius;
+  svg(map,"circle",{cx:x,cy:y,r:radius,fill:"#16242b",stroke:"#f4a75e","stroke-width":1});
+  svg(map,"line",{x1:x+radius+2,y1:y,x2:223,y2:y,stroke:"#e59750","stroke-width":1});
+  svg(map,"text",{x:226,y:y+4,fill:"#ffc27b","font-size":11},"ISS");
+  panel.append(element("p","ISS outlined in amber · approximate angular sizes · increasing altitude up","muted"));
+}
 function renderEvents(data) {
+  data.transits.sort((a,b)=>Date.parse(a.peak)-Date.parse(b.peak));
+  const inPass = (ev,pass)=>Date.parse(ev.peak)>=Date.parse(pass.rise) && Date.parse(ev.peak)<=Date.parse(pass.set);
+  if (openSample) {
+    openSample = false;
+    const ev = data.transits.find(event=>event.target==="Sun");
+    if (ev) { openEvent(ev,data.passes.find(pass=>inPass(ev,pass)),true); return; }
+  }
   const definitions=[["transits",data.transits,"No disk crossings at this site in the covered interval."],["near-misses",data.near_misses,"No near misses in the covered interval."],["passes",data.passes,"No passes in the covered interval."]];
   for(const [id,records,empty] of definitions) {
     const parent=$(id); parent.replaceChildren();
@@ -265,28 +308,24 @@ function renderEvents(data) {
     for(const ev of records||[]) {
       if(id==="passes") {
         row(parent,shortUTC(ev.peak),"Rise "+shortUTC(ev.rise)+" · Set "+shortUTC(ev.set)+" · Peak altitude "+degrees(ev.peak_alt),
-          action("View track",()=>{instant=new Date(ev.peak); live=false;track=ev.track||[];selected="ISS";syncClock();location.hash="sky";}));
+          action("View track",()=>{const hit=data.transits.find(event=>inPass(event,ev)); openEvent(hit||ev,ev,Boolean(hit));}));
       } else {
         const description=id==="transits" ? "Entry "+preciseUTC(ev.entry)+" · Exit "+preciseUTC(ev.exit)+" · Duration "+ev.duration_s.toFixed(2)+" s" : "Closest separation "+degrees(ev.separation_deg);
         const localTime = new Date(ev.peak).toLocaleTimeString(undefined,{timeZoneName:"short"});
         const age = ev.orbit ? " · Orbit epoch "+shortUTC(ev.orbit.epoch)+" ("+(Math.abs(Date.parse(ev.peak)-Date.parse(ev.orbit.epoch))/3600000).toFixed(1)+" h from event)" : "";
         const controls = element("div", null, "event-actions");
-        controls.append(action("View sky", () => {
-          instant = new Date(ev.peak);
-          live = false;
-          const pass = data.passes.find(p => Date.parse(p.rise) <= +instant && +instant <= Date.parse(p.set));
-          track = pass?.track || [];
-          selected = "ISS";
-          syncClock();
-          location.hash = "sky";
-        }), action("View corridor", () => showCorridor(ev)));
+        controls.append(action(id==="transits" ? "Replay transit" : "View sky", () =>
+          openEvent(ev,data.passes.find(pass=>inPass(ev,pass)),id==="transits")));
+        if (["Sun","Moon"].includes(ev.target)) controls.append(action("View corridor",()=>showCorridor(ev)));
         row(parent,ev.target+" · "+preciseUTC(ev.peak),description+" · "+localTime+" device time · Alt "+degrees(ev.alt)+" · Az "+degrees(ev.az)+age, controls);
       }
     }
   }
   const summary=$("event-summary");
   summary.replaceChildren(element("span","From "+shortUTC(instant)+" · "+$("hours").value+" hours"));
+  if (data.transits.length) summary.append(element("strong"," · First predicted crossing in covered time: "+data.transits[0].target+" · "+preciseUTC(data.transits[0].peak)));
   if(data.gaps?.length) {
+    summary.append(element("p","Some times have no ISS orbit within three days. Crossings in those gaps are unknown."));
     const gaps=element("details");gaps.append(element("summary","Orbit coverage gaps ("+data.gaps.length+")"));
     for(const gap of data.gaps) gaps.append(element("p",shortUTC(gap.start)+" to "+shortUTC(gap.end)));
     summary.append(gaps, action("Get historical orbits",()=>{location.hash="archive";}));
@@ -301,6 +340,7 @@ async function loadView() {
   }
   $("view-title").textContent=titles[view];$("notice").textContent="";
   if(view==="sky") {
+    renderTransitDetail();
     pendingSky = true;
     $("chart-date").textContent=stamp(instant).slice(0,10);
     if(!live || !positions.length) {positions=[]; renderPositions();}
@@ -317,7 +357,7 @@ async function loadView() {
       if(!positions.some(obj=>obj.name===selected)) selected=(positions.find(obj=>isISS(obj.name))||positions.find(obj=>obj.alt>=0)||positions[0])?.name;
       renderPositions(); $("sky-orbit").textContent=data.orbit?"ISS orbit epoch · "+shortUTC(data.orbit.epoch)+" · "+data.orbit.source:"ISS orbit unavailable for this time. Import or retrieve a dated orbit in the archive.";
     } else if(view==="events") {
-      const data=await api("events",{...parameters(),hours:$("hours").value});if(revision===generation) renderEvents(data);
+      const data=await api("events",{...parameters(),hours:$("hours").value,target:$("event-target").value});if(revision===generation) renderEvents(data);
     } else {
       const data=await api("archive");if(revision!==generation) return;
       const parent=$("orbits");parent.replaceChildren();
@@ -348,7 +388,7 @@ async function archiveAction(button,path,payload) {
 $("refresh").onclick=()=>archiveAction($("refresh"),"refresh",{});
 $("import-form").onsubmit=e=>{e.preventDefault();archiveAction(e.submitter||$("import-form").querySelector("button"),"import",{tle:$("tle").value.trim()});};
 $("history").onclick=()=>archiveAction($("history"),"history",{start:instant.toISOString(),end:new Date(+instant+Number($("hours").value)*3600000).toISOString()});
-$("hours").onchange=loadView;
+$("hours").onchange=$("event-target").onchange=loadView;
 window.addEventListener("hashchange", () => {
   window.scrollTo(0, 0);
   loadView();

@@ -15,7 +15,7 @@ from urllib.error import URLError
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from data_store import Store, OrbitUnavailable, MAX_AGE_DAYS
-from engine import Engine
+from engine import Engine, RADII_KM
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -89,7 +89,14 @@ class Tracker:
             return {"points": self.engine.corridor(at, target, orbit), "orbit": meta}
         if path != "/api/events":
             raise ValueError("Unknown endpoint.")
-        end = at + timedelta(hours=number(args, "hours", 1, 72, 24))
+        end = at + timedelta(hours=number(args, "hours", 1, 168, 24))
+        target = args.get("target", "Sun and Moon")
+        if target == "Sun and Moon":
+            targets = ("Sun", "Moon")
+        elif target in RADII_KM:
+            targets = (target,)
+        else:
+            raise ValueError("Unknown transit target.")
         result = {"passes": [], "transits": [], "near_misses": [], "gaps": []}
         for a, b in windows(at, end, self.store.orbits()):
             try:
@@ -99,7 +106,7 @@ class Tracker:
                 continue
             # Padding preserves pass rise/set and transit contacts at window edges.
             pad = timedelta(minutes=15)
-            found = self.engine.events(*site, a-pad, b+pad, orbit)
+            found = self.engine.events(*site, a-pad, b+pad, orbit, targets)
             for kind, rows in found.items():
                 for row in rows:
                     peak = instant(row["peak"])
